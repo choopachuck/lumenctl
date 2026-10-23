@@ -1,0 +1,25 @@
+[package]
+name = "lumenctl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Monitor brightness/contrast control over DDC/CI with tray icons, HTTP/WS API and Home Assistant integration"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+lumen-core.workspace = true
+lumen-server.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = ["Win32_System_Console"] }
