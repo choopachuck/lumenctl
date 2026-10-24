@@ -33,7 +33,7 @@
         mc = {
           id: monitor.id, alias: null, ignore: false, use_6b: false, show_brightness_icon: null,
           show_contrast_icon: null, min_brightness: null, max_brightness: null, min_contrast: null,
-          max_contrast: null, font: null,
+          max_contrast: null, font: null, brightness_color: null, contrast_color: null,
         };
         c.monitor.push(mc);
       }

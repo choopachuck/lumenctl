@@ -6,15 +6,18 @@
 
   let draft = $state<Config | null>(null);
   let info = $state<AppInfo | null>(null);
+  let fonts = $state<string[]>([]);
   let saving = $state(false);
 
   onMount(async () => {
+    fonts = await api.fonts().catch(() => []);
     const cfg = structuredClone(await api.config());
     for (const m of app.monitors) {
       if (!cfg.monitor.some((c) => c.id === m.id)) {
         cfg.monitor.push({
           id: m.id, alias: null, ignore: false, use_6b: false, show_brightness_icon: null, show_contrast_icon: null,
-          min_brightness: null, max_brightness: null, min_contrast: null, max_contrast: null, font: null,
+          min_brightness: null, max_brightness: null, min_contrast: null, max_contrast: null,
+          font: null, brightness_color: null, contrast_color: null,
         });
       }
     }
@@ -24,6 +27,12 @@
 
   function monitorCfg(id: string): MonitorConfig {
     return draft!.monitor.find((m) => m.id === id)!;
+  }
+
+  function fontOptions(current: string | null | undefined) {
+    const list = [...fonts];
+    if (current && !list.includes(current)) list.unshift(current);
+    return list;
   }
 
   function numOrNull(v: string) {
@@ -80,8 +89,11 @@
         <span>Middle click contrast</span>
         <div class="row"><input type="number" min="0" max="100" bind:value={draft.tray.middle_click_contrast[0]} />
           ↔ <input type="number" min="0" max="100" bind:value={draft.tray.middle_click_contrast[1]} /></div>
-        <span>Font</span><input type="text" bind:value={draft.tray.font} />
-        <span>Colors</span>
+        <span>Default font</span>
+        <select bind:value={draft.tray.font}>
+          {#each fontOptions(draft.tray.font) as f (f)}<option value={f} style:font-family={f}>{f}</option>{/each}
+        </select>
+        <span>Default colors</span>
         <div class="row">
           <input type="color" title="Brightness" bind:value={draft.tray.brightness_color} />
           <input type="color" title="Contrast" bind:value={draft.tray.contrast_color} />
@@ -115,8 +127,27 @@
             <input type="number" placeholder="0" value={mc.min_contrast ?? ""} oninput={(e) => (mc.min_contrast = numOrNull(e.currentTarget.value))} />
             – <input type="number" placeholder="100" value={mc.max_contrast ?? ""} oninput={(e) => (mc.max_contrast = numOrNull(e.currentTarget.value))} />
           </div>
-          <span>Icon font</span><input type="text" placeholder={draft.tray.font} value={mc.font ?? ""}
-            oninput={(e) => (mc.font = e.currentTarget.value || null)} />
+          <span>Icon font</span>
+          <select value={mc.font ?? ""} onchange={(e) => (mc.font = e.currentTarget.value || null)}>
+            <option value="">Default ({draft.tray.font})</option>
+            {#each fontOptions(mc.font) as f (f)}<option value={f} style:font-family={f}>{f}</option>{/each}
+          </select>
+          <span>Icon colors</span>
+          <div class="row colors">
+            <label class="swatch" title="Brightness icon">
+              <input type="color" value={mc.brightness_color ?? draft.tray.brightness_color}
+                oninput={(e) => (mc.brightness_color = e.currentTarget.value)} />
+              Brightness
+            </label>
+            <label class="swatch" title="Contrast icon">
+              <input type="color" value={mc.contrast_color ?? draft.tray.contrast_color}
+                oninput={(e) => (mc.contrast_color = e.currentTarget.value)} />
+              Contrast
+            </label>
+            {#if mc.brightness_color || mc.contrast_color}
+              <button onclick={() => { mc.brightness_color = null; mc.contrast_color = null; }}>Default colors</button>
+            {/if}
+          </div>
         </div>
         <label><input type="checkbox" bind:checked={mc.use_6b} /> Use VCP 0x6B for brightness</label>
         <label><input type="checkbox" bind:checked={mc.ignore} /> Ignore this device (no DDC/CI)</label>
@@ -193,8 +224,15 @@
   .grid > span {
     color: var(--text-2);
   }
+  .grid select {
+    width: 100%;
+  }
   .grid input[type="number"] {
     width: 70px;
+  }
+  .swatch {
+    color: var(--text-2);
+    font-size: 12px;
   }
   .grid .port {
     width: 80px;

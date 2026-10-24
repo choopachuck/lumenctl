@@ -5,6 +5,11 @@ edition.workspace = true
 license.workspace = true
 description = "Monitor brightness/contrast control over DDC/CI with tray icons, HTTP/WS API and Home Assistant integration"
 
+[features]
+default = ["custom-protocol"]
+# Production builds embed the UI. `tauri dev` turns this off and loads the Vite server instead.
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

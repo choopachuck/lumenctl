@@ -86,6 +86,8 @@ export interface MonitorConfig {
   min_contrast: number | null;
   max_contrast: number | null;
   font: string | null;
+  brightness_color: string | null;
+  contrast_color: string | null;
 }
 
 export interface Config {
@@ -159,6 +161,7 @@ export const api = {
   systemVolume: () => invoke<{ volume: number; muted: boolean }>("get_system_volume"),
   setSystemVolume: (volume?: ValueSpec, muted?: boolean) => invoke<void>("set_system_volume", { volume, muted }),
   info: () => invoke<AppInfo>("app_info"),
+  fonts: () => invoke<string[]>("list_fonts"),
 };
 
 export const VCP_NAMES: Record<number, string> = {

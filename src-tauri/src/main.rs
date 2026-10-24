@@ -79,6 +79,7 @@ fn main() {
             commands::get_system_volume,
             commands::set_system_volume,
             commands::app_info,
+            commands::list_fonts,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

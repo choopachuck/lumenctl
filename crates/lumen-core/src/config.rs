@@ -148,8 +148,12 @@ pub struct MonitorConfig {
     pub max_brightness: Option<u32>,
     pub min_contrast: Option<u32>,
     pub max_contrast: Option<u32>,
-    /// Font for this monitor's tray icons (helps telling identical monitors apart).
+    /// Tray icon typeface. Empty means the global tray font.
     pub font: Option<String>,
+    /// `#RRGGBB` for this monitor's brightness icon. Empty means the global brightness color.
+    pub brightness_color: Option<String>,
+    /// `#RRGGBB` for this monitor's contrast icon. Empty means the global contrast color.
+    pub contrast_color: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

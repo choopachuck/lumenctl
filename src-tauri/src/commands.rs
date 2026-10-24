@@ -158,3 +158,43 @@ pub fn app_info(engine: State<'_, Engine>) -> AppInfo {
         mqtt_node_id: lumen_server::mqtt::node_id(&engine.config().mqtt),
     }
 }
+
+/// Installed font families, for the tray icon font pickers.
+#[tauri::command]
+pub fn list_fonts() -> Vec<String> {
+    #[cfg(windows)]
+    {
+        use std::collections::BTreeSet;
+        use windows::Win32::Foundation::LPARAM;
+        use windows::Win32::Graphics::Gdi::{
+            CreateCompatibleDC, DeleteDC, EnumFontFamiliesExW, DEFAULT_CHARSET, LOGFONTW, TEXTMETRICW,
+        };
+
+        unsafe extern "system" fn callback(
+            lf: *const LOGFONTW,
+            _: *const TEXTMETRICW,
+            _: u32,
+            data: LPARAM,
+        ) -> i32 {
+            let set = &mut *(data.0 as *mut BTreeSet<String>);
+            let face = unsafe { (*lf).lfFaceName };
+            let end = face.iter().position(|&c| c == 0).unwrap_or(face.len());
+            let name = String::from_utf16_lossy(&face[..end]);
+            if !name.is_empty() && !name.starts_with('@') {
+                set.insert(name);
+            }
+            1
+        }
+
+        let mut set = BTreeSet::new();
+        unsafe {
+            let hdc = CreateCompatibleDC(None);
+            let mut lf = LOGFONTW { lfCharSet: DEFAULT_CHARSET, ..Default::default() };
+            EnumFontFamiliesExW(hdc, &mut lf, Some(callback), LPARAM(&mut set as *mut _ as isize), 0);
+            let _ = DeleteDC(hdc);
+        }
+        return set.into_iter().collect();
+    }
+    #[cfg(not(windows))]
+    Vec::new()
+}

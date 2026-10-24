@@ -75,6 +75,7 @@ struct Entry {
     text: String,
     tip: String,
     color: String,
+    font: String,
     hicon: HICON,
 }
 
@@ -377,7 +378,15 @@ impl State {
         for m in self.engine.monitor_handles() {
             let snap = m.snapshot();
             let mc = cfg.monitor(&snap.info.id);
-            let font = mc.and_then(|c| c.font.clone()).unwrap_or_else(|| cfg.tray.font.clone());
+            let font = mc.and_then(|c| c.font.clone()).filter(|s| !s.is_empty()).unwrap_or_else(|| cfg.tray.font.clone());
+            let brightness_color = mc
+                .and_then(|c| c.brightness_color.clone())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| cfg.tray.brightness_color.clone());
+            let contrast_color = mc
+                .and_then(|c| c.contrast_color.clone())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| cfg.tray.contrast_color.clone());
             let off = snap.power.is_some_and(|p| p != PowerState::On);
             let mut add = |kind: Kind, value: Option<lumen_core::VcpValue>, label: &str, color: &str| {
                 let text = match value {
@@ -402,10 +411,10 @@ impl State {
                 ));
             };
             if mc.and_then(|c| c.show_brightness_icon).unwrap_or(true) {
-                add(Kind::Brightness, snap.brightness, "Brightness", &cfg.tray.brightness_color);
+                add(Kind::Brightness, snap.brightness, "Brightness", &brightness_color);
             }
             if mc.and_then(|c| c.show_contrast_icon).unwrap_or(false) {
-                add(Kind::Contrast, snap.contrast, "Contrast", &cfg.tray.contrast_color);
+                add(Kind::Contrast, snap.contrast, "Contrast", &contrast_color);
             }
         }
         if cfg.tray.show_system_volume_icon {
@@ -432,7 +441,7 @@ impl State {
             let unchanged = self
                 .entries
                 .get(&uid)
-                .is_some_and(|e| e.text == text && e.tip == tip && e.color == color);
+                .is_some_and(|e| e.text == text && e.tip == tip && e.color == color && e.font == font);
             if unchanged {
                 continue;
             }
@@ -453,7 +462,7 @@ impl State {
                     let _ = Shell_NotifyIconW(NIM_SETVERSION, &nid);
                 }
             }
-            self.entries.insert(uid, Entry { monitor_id, kind, text, tip, color, hicon });
+            self.entries.insert(uid, Entry { monitor_id, kind, text, tip, color, font, hicon });
         }
         self.update_rects();
     }
