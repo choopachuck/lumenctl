@@ -89,15 +89,21 @@
         <span>Middle click contrast</span>
         <div class="row"><input type="number" min="0" max="100" bind:value={draft.tray.middle_click_contrast[0]} />
           ↔ <input type="number" min="0" max="100" bind:value={draft.tray.middle_click_contrast[1]} /></div>
-        <span>Default font</span>
-        <select bind:value={draft.tray.font}>
-          {#each fontOptions(draft.tray.font) as f (f)}<option value={f} style:font-family={f}>{f}</option>{/each}
-        </select>
-        <span>Default colors</span>
-        <div class="row">
-          <input type="color" title="Brightness" bind:value={draft.tray.brightness_color} />
-          <input type="color" title="Contrast" bind:value={draft.tray.contrast_color} />
-          <input type="color" title="Volume" bind:value={draft.tray.volume_color} />
+      </div>
+      <div class="look">
+        <div class="look-top">
+          <div class="previews">
+            <span class="tray-preview" style:color={draft.tray.brightness_color} style:font-family={draft.tray.font} title="Brightness">50</span>
+            <span class="tray-preview" style:color={draft.tray.contrast_color} style:font-family={draft.tray.font} title="Contrast">50</span>
+          </div>
+          <select class="grow" bind:value={draft.tray.font} title="Default font">
+            {#each fontOptions(draft.tray.font) as f (f)}<option value={f} style:font-family={f}>{f}</option>{/each}
+          </select>
+        </div>
+        <div class="color-line">
+          <label class="swatch" title="Brightness"><input type="color" bind:value={draft.tray.brightness_color} /> Brightness</label>
+          <label class="swatch" title="Contrast"><input type="color" bind:value={draft.tray.contrast_color} /> Contrast</label>
+          <label class="swatch" title="Volume"><input type="color" bind:value={draft.tray.volume_color} /> Volume</label>
         </div>
       </div>
     </div>
@@ -127,13 +133,29 @@
             <input type="number" placeholder="0" value={mc.min_contrast ?? ""} oninput={(e) => (mc.min_contrast = numOrNull(e.currentTarget.value))} />
             – <input type="number" placeholder="100" value={mc.max_contrast ?? ""} oninput={(e) => (mc.max_contrast = numOrNull(e.currentTarget.value))} />
           </div>
-          <span>Icon font</span>
-          <select value={mc.font ?? ""} onchange={(e) => (mc.font = e.currentTarget.value || null)}>
-            <option value="">Default ({draft.tray.font})</option>
-            {#each fontOptions(mc.font) as f (f)}<option value={f} style:font-family={f}>{f}</option>{/each}
-          </select>
-          <span>Icon colors</span>
-          <div class="row colors">
+        </div>
+        <div class="look">
+          <div class="look-top">
+            <div class="previews">
+              {#if mc.show_brightness_icon ?? true}
+                {@const text = m.brightness == null ? "–" : String(m.brightness.current)}
+                <span class="tray-preview" class:long={text.length > 2} title="Brightness icon"
+                  style:color={mc.brightness_color || draft.tray.brightness_color}
+                  style:font-family={mc.font || draft.tray.font}>{text}</span>
+              {/if}
+              {#if mc.show_contrast_icon ?? false}
+                {@const text = m.contrast == null ? "–" : String(m.contrast.current)}
+                <span class="tray-preview" class:long={text.length > 2} title="Contrast icon"
+                  style:color={mc.contrast_color || draft.tray.contrast_color}
+                  style:font-family={mc.font || draft.tray.font}>{text}</span>
+              {/if}
+            </div>
+            <select class="grow" value={mc.font ?? ""} title="Icon font" onchange={(e) => (mc.font = e.currentTarget.value || null)}>
+              <option value="">Default ({draft.tray.font})</option>
+              {#each fontOptions(mc.font) as f (f)}<option value={f} style:font-family={f}>{f}</option>{/each}
+            </select>
+          </div>
+          <div class="color-line">
             <label class="swatch" title="Brightness icon">
               <input type="color" value={mc.brightness_color ?? draft.tray.brightness_color}
                 oninput={(e) => (mc.brightness_color = e.currentTarget.value)} />
@@ -145,7 +167,7 @@
               Contrast
             </label>
             {#if mc.brightness_color || mc.contrast_color}
-              <button onclick={() => { mc.brightness_color = null; mc.contrast_color = null; }}>Default colors</button>
+              <button class="reset" onclick={() => { mc.brightness_color = null; mc.contrast_color = null; }}>Reset</button>
             {/if}
           </div>
         </div>
@@ -209,29 +231,99 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    min-width: 0;
+  }
+  .form > * {
+    min-width: 0;
+    max-width: 100%;
   }
   .form label {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
+    min-width: 0;
   }
   .grid {
     display: grid;
-    grid-template-columns: 42% 1fr;
+    grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr);
     gap: 6px 10px;
     align-items: center;
+  }
+  .grid > * {
+    min-width: 0;
   }
   .grid > span {
     color: var(--text-2);
   }
-  .grid select {
+  .grid select,
+  .grid input[type="text"],
+  .grid input[type="password"],
+  .look-fields select,
+  .row input[type="text"] {
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
   }
   .grid input[type="number"] {
-    width: 70px;
+    width: 4.2rem;
+    min-width: 0;
+  }
+  .row {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  .look {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+  .look-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .look-top select {
+    flex: 1;
+    width: 0;
+    min-width: 0;
+  }
+  .previews {
+    display: flex;
+    gap: 4px;
+    flex: none;
+  }
+  .tray-preview {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 7px;
+    background: #1a1a1a;
+    color: var(--brightness);
+    font-weight: 700;
+    font-size: 15px;
+    line-height: 1;
+    letter-spacing: -0.04em;
+  }
+  .tray-preview.long {
+    font-size: 11px;
+  }
+  .color-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
   }
   .swatch {
     color: var(--text-2);
+    font-size: 12px;
+    flex: none;
+  }
+  .reset {
+    padding: 2px 8px;
     font-size: 12px;
   }
   .grid .port {
@@ -246,7 +338,9 @@
     background: none;
   }
   .label {
-    width: 110px;
+    width: auto;
+    flex: 1 1 6rem;
+    min-width: 0;
   }
   .mono,
   code {

@@ -27,13 +27,13 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CallNextHookEx, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon,
-    DestroyMenu, DispatchMessageW, GetCursorPos, GetMessageW, GetSystemMetrics, KillTimer,
-    PostMessageW, PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SendMessageTimeoutW,
+    DestroyMenu, DispatchMessageW, GetCursorPos, GetMessageW, KillTimer, PostMessageW,
+    PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SendMessageTimeoutW,
     SetForegroundWindow, SetTimer, SetWindowsHookExW, TrackPopupMenuEx, TranslateMessage, HICON,
     HMENU, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG, MSLLHOOKSTRUCT, SMTO_ABORTIFHUNG,
-    SM_CXSMICON, TPM_BOTTOMALIGN, TPM_RETURNCMD,
-    TPM_RIGHTBUTTON, WH_MOUSE_LL, WINDOW_EX_STYLE, WM_APP, WM_CONTEXTMENU, WM_DISPLAYCHANGE,
-    WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_TIMER, WNDCLASSEXW, WS_OVERLAPPED,
+    TPM_BOTTOMALIGN, TPM_RETURNCMD, TPM_RIGHTBUTTON, WH_MOUSE_LL, WINDOW_EX_STYLE, WM_APP,
+    WM_CONTEXTMENU, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE,
+    WM_MOUSEWHEEL, WM_TIMER, WNDCLASSEXW, WS_OVERLAPPED,
 };
 
 pub struct Hooks {
@@ -76,6 +76,7 @@ struct Entry {
     tip: String,
     color: String,
     font: String,
+    px: i32,
     hicon: HICON,
 }
 
@@ -153,12 +154,16 @@ fn run(engine: Engine, hooks: Hooks) -> anyhow::Result<()> {
 
         // Forward engine events to the window thread, coalescing bursts into one repaint.
         let mut rx = engine.subscribe();
-        thread::Builder::new().name("tray-events".into()).spawn(move || loop {
-            match rx.blocking_recv() {
-                Ok(Event::Quit) | Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                Ok(_) | Err(_) => request_refresh(),
-            }
-        })?;
+        thread::Builder::new()
+            .name("tray-events".into())
+            .spawn(move || loop {
+                match rx.blocking_recv() {
+                    Ok(Event::Quit) | Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        break
+                    }
+                    Ok(_) | Err(_) => request_refresh(),
+                }
+            })?;
 
         let _hook = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), Some(hinstance.into()), 0)?;
         SetTimer(Some(hwnd), TIMER_VOLUME, 2000, None);
@@ -195,7 +200,12 @@ unsafe extern "system" fn mouse_hook(code: i32, wparam: WPARAM, lparam: LPARAM) 
         if let Some(uid) = hit {
             let delta = (info.mouseData >> 16) as i16;
             let hwnd = HWND(HWND_RAW.load(Ordering::SeqCst) as *mut _);
-            let _ = PostMessageW(Some(hwnd), WM_WHEEL, WPARAM(uid as usize), LPARAM(delta as isize));
+            let _ = PostMessageW(
+                Some(hwnd),
+                WM_WHEEL,
+                WPARAM(uid as usize),
+                LPARAM(delta as isize),
+            );
             return LRESULT(1);
         }
     }
@@ -214,7 +224,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 return false;
             }
         };
-        let Some(state) = guard.as_mut() else { return false };
+        let Some(state) = guard.as_mut() else {
+            return false;
+        };
         match msg {
             WM_REFRESH => {
                 REFRESH_PENDING.store(false, Ordering::SeqCst);
@@ -263,6 +275,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             WM_DISPLAYCHANGE => {
                 // Monitors (dis)connected or woke up: rescan once things settle.
                 SetTimer(Some(hwnd), TIMER_RESCAN, 3000, None);
+                false
+            }
+            WM_DPICHANGED => {
+                state.sync_icons();
                 false
             }
             WM_SHUTDOWN => {
@@ -372,13 +388,17 @@ impl State {
             self.remove_all();
             return;
         }
-        let size = unsafe { GetSystemMetrics(SM_CXSMICON) }.max(16);
-        let mut desired: Vec<(u32, Option<String>, Kind, String, String, String, String)> = Vec::new();
+        let size = icon::tray_px();
+        let mut desired: Vec<(u32, Option<String>, Kind, String, String, String, String)> =
+            Vec::new();
 
         for m in self.engine.monitor_handles() {
             let snap = m.snapshot();
             let mc = cfg.monitor(&snap.info.id);
-            let font = mc.and_then(|c| c.font.clone()).filter(|s| !s.is_empty()).unwrap_or_else(|| cfg.tray.font.clone());
+            let font = mc
+                .and_then(|c| c.font.clone())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| cfg.tray.font.clone());
             let brightness_color = mc
                 .and_then(|c| c.brightness_color.clone())
                 .filter(|s| !s.is_empty())
@@ -388,30 +408,38 @@ impl State {
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| cfg.tray.contrast_color.clone());
             let off = snap.power.is_some_and(|p| p != PowerState::On);
-            let mut add = |kind: Kind, value: Option<lumen_core::VcpValue>, label: &str, color: &str| {
-                let text = match value {
-                    _ if off => "–".to_string(),
-                    Some(v) => v.percent().to_string(),
-                    None if snap.ddc_ok => "–".to_string(),
-                    None => "?".to_string(),
+            let mut add =
+                |kind: Kind, value: Option<lumen_core::VcpValue>, label: &str, color: &str| {
+                    let text = match value {
+                        _ if off => "–".to_string(),
+                        Some(v) => v.percent().to_string(),
+                        None if snap.ddc_ok => "–".to_string(),
+                        None => "?".to_string(),
+                    };
+                    let tip = format!(
+                        "{} · {label} {}\nScroll: change · Middle click: toggle",
+                        snap.display_name,
+                        value
+                            .map(|v| format!("{}%", v.percent()))
+                            .unwrap_or_else(|| "n/a".into())
+                    );
+                    desired.push((
+                        stable_uid(&snap.info.id, kind),
+                        Some(snap.info.id.clone()),
+                        kind,
+                        text,
+                        tip,
+                        color.to_string(),
+                        font.clone(),
+                    ));
                 };
-                let tip = format!(
-                    "{} · {label} {}\nScroll: change · Middle click: toggle",
-                    snap.display_name,
-                    value.map(|v| format!("{}%", v.percent())).unwrap_or_else(|| "n/a".into())
-                );
-                desired.push((
-                    stable_uid(&snap.info.id, kind),
-                    Some(snap.info.id.clone()),
-                    kind,
-                    text,
-                    tip,
-                    color.to_string(),
-                    font.clone(),
-                ));
-            };
             if mc.and_then(|c| c.show_brightness_icon).unwrap_or(true) {
-                add(Kind::Brightness, snap.brightness, "Brightness", &brightness_color);
+                add(
+                    Kind::Brightness,
+                    snap.brightness,
+                    "Brightness",
+                    &brightness_color,
+                );
             }
             if mc.and_then(|c| c.show_contrast_icon).unwrap_or(false) {
                 add(Kind::Contrast, snap.contrast, "Contrast", &contrast_color);
@@ -424,7 +452,10 @@ impl State {
                     None,
                     Kind::Volume,
                     if muted { "M".into() } else { vol.to_string() },
-                    format!("System volume {vol}%{}", if muted { " (muted)" } else { "" }),
+                    format!(
+                        "System volume {vol}%{}",
+                        if muted { " (muted)" } else { "" }
+                    ),
                     cfg.tray.volume_color.clone(),
                     cfg.tray.font.clone(),
                 ));
@@ -432,16 +463,20 @@ impl State {
         }
 
         let keep: Vec<u32> = desired.iter().map(|d| d.0).collect();
-        let stale: Vec<u32> = self.entries.keys().copied().filter(|k| !keep.contains(k)).collect();
+        let stale: Vec<u32> = self
+            .entries
+            .keys()
+            .copied()
+            .filter(|k| !keep.contains(k))
+            .collect();
         for uid in stale {
             self.remove(uid);
         }
 
         for (uid, monitor_id, kind, text, tip, color, font) in desired {
-            let unchanged = self
-                .entries
-                .get(&uid)
-                .is_some_and(|e| e.text == text && e.tip == tip && e.color == color && e.font == font);
+            let unchanged = self.entries.get(&uid).is_some_and(|e| {
+                e.text == text && e.tip == tip && e.color == color && e.font == font && e.px == size
+            });
             if unchanged {
                 continue;
             }
@@ -462,7 +497,19 @@ impl State {
                     let _ = Shell_NotifyIconW(NIM_SETVERSION, &nid);
                 }
             }
-            self.entries.insert(uid, Entry { monitor_id, kind, text, tip, color, font, hicon });
+            self.entries.insert(
+                uid,
+                Entry {
+                    monitor_id,
+                    kind,
+                    text,
+                    tip,
+                    color,
+                    font,
+                    px: size,
+                    hicon,
+                },
+            );
         }
         self.update_rects();
     }
@@ -504,10 +551,16 @@ impl State {
     }
 
     fn on_wheel(&mut self, uid: u32, delta: i16) {
-        let Some(entry) = self.entries.get(&uid) else { return };
+        let Some(entry) = self.entries.get(&uid) else {
+            return;
+        };
         let cfg = self.engine.config();
         let notches = (delta as i32 / 120).max(-10).min(10);
-        let notches = if notches == 0 { delta.signum() as i32 } else { notches };
+        let notches = if notches == 0 {
+            delta.signum() as i32
+        } else {
+            notches
+        };
         let (kind, monitor_id) = (entry.kind, entry.monitor_id.clone());
         let engine = self.engine.clone();
         match kind {
@@ -523,7 +576,9 @@ impl State {
                 } else {
                     (Feature::Contrast, cfg.tray.wheel_step_contrast)
                 };
-                let Some(m) = monitor_id.and_then(|id| engine.monitor(&id)) else { return };
+                let Some(m) = monitor_id.and_then(|id| engine.monitor(&id)) else {
+                    return;
+                };
                 let value = Value::Rel(step as i32 * notches);
                 if m.cached(m.code(feature)).is_some() {
                     // Fast path: optimistic update, write is queued on the monitor thread.
@@ -538,7 +593,9 @@ impl State {
     }
 
     fn on_middle(&mut self, uid: u32) {
-        let Some(entry) = self.entries.get(&uid) else { return };
+        let Some(entry) = self.entries.get(&uid) else {
+            return;
+        };
         let cfg = self.engine.config();
         let flag = self.middle_toggle.entry(uid).or_insert(false);
         *flag = !*flag;
@@ -557,7 +614,9 @@ impl State {
                 } else {
                     (Feature::Contrast, cfg.tray.middle_click_contrast)
                 };
-                let Some(m) = entry.monitor_id.as_ref().and_then(|id| engine.monitor(id)) else { return };
+                let Some(m) = entry.monitor_id.as_ref().and_then(|id| engine.monitor(id)) else {
+                    return;
+                };
                 thread::spawn(move || {
                     let _ = engine.adjust(&m, feature, Value::Abs(values[idx]));
                 });
@@ -579,7 +638,10 @@ impl State {
 
             for (i, entry) in cfg.menu.iter().enumerate() {
                 add(menu, CMD_MENU_BASE + i, &entry.label);
-                self.menu_actions.insert(CMD_MENU_BASE + i, MenuAction::Command(entry.command.clone()));
+                self.menu_actions.insert(
+                    CMD_MENU_BASE + i,
+                    MenuAction::Command(entry.command.clone()),
+                );
             }
             if !cfg.menu.is_empty() {
                 let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
@@ -592,16 +654,22 @@ impl State {
                 let power_id = CMD_POWER_BASE + i;
                 let on = snap.power.map_or(true, |p| p == PowerState::On);
                 add(sub, power_id, if on { "Power off" } else { "Power on" });
-                self.menu_actions.insert(power_id, MenuAction::Power(snap.info.id.clone()));
+                self.menu_actions
+                    .insert(power_id, MenuAction::Power(snap.info.id.clone()));
                 let _ = AppendMenuW(sub, MF_SEPARATOR, 0, None);
                 let header: Vec<u16> = "Input".encode_utf16().chain(std::iter::once(0)).collect();
                 let _ = AppendMenuW(sub, MF_STRING | MF_GRAYED, 0, PCWSTR(header.as_ptr()));
                 for (j, input) in snap.supported_inputs.iter().enumerate() {
                     let id = CMD_INPUT_BASE + i * 64 + j;
                     let current = snap.input.as_ref().is_some_and(|c| c.value == input.value);
-                    let label = if current { format!("● {}", input.name) } else { format!("   {}", input.name) };
+                    let label = if current {
+                        format!("● {}", input.name)
+                    } else {
+                        format!("   {}", input.name)
+                    };
                     add(sub, id, &label);
-                    self.menu_actions.insert(id, MenuAction::Input(snap.info.id.clone(), input.value));
+                    self.menu_actions
+                        .insert(id, MenuAction::Input(snap.info.id.clone(), input.value));
                 }
                 let title: Vec<u16> = format!("{}. {}", snap.info.index, snap.display_name)
                     .encode_utf16()
@@ -651,6 +719,14 @@ pub fn shutdown() {
         return;
     }
     unsafe {
-        let _ = SendMessageTimeoutW(hwnd, WM_SHUTDOWN, WPARAM(0), LPARAM(0), SMTO_ABORTIFHUNG, 2000, None);
+        let _ = SendMessageTimeoutW(
+            hwnd,
+            WM_SHUTDOWN,
+            WPARAM(0),
+            LPARAM(0),
+            SMTO_ABORTIFHUNG,
+            2000,
+            None,
+        );
     }
 }

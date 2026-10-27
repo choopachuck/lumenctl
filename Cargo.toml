@@ -6,7 +6,7 @@ members = ["crates/lumen-core", "crates/lumen-server", "src-tauri"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/your-name/lumenctl"
+repository = "https://github.com/choopachuck/lumenctl"
 
 [workspace.dependencies]
 anyhow = "1"
@@ -24,6 +24,7 @@ windows = { version = "0.61", features = [
     "Win32_Devices_Display",
     "Win32_Graphics_Gdi",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_HiDpi",
     "Win32_UI_Shell",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_System_LibraryLoader",
