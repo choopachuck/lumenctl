@@ -25,6 +25,18 @@ npm run build    # release build + NSIS/MSI installers in target/release/bundle
 
 Configuration lives in `%APPDATA%\lumenctl\config.toml` (editable from the Settings screen).
 
+## Download
+
+Windows builds are on the [releases page](https://github.com/choopachuck/lumenctl/releases).
+`lumenctl-<version>-x64-setup.exe` is the installer. `lumenctl-<version>-x64.exe` is the program itself.
+
+A release is built when a `v*` tag is pushed:
+
+```powershell
+git tag v1.0.0
+git push origin v1.0.0
+```
+
 ## Command language
 
 Compatible with ClickMonitorDDC. Prefix commands with a monitor name, alias, serial, number or id;
