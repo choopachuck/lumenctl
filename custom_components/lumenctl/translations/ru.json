@@ -1,0 +1,68 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "lumenctl",
+        "description": "Использует брокер MQTT, уже настроенный в Home Assistant. В lumenctl включите MQTT и выключите Home Assistant discovery.",
+        "data": {
+          "base_topic": "Базовый топик",
+          "node_id": "Идентификатор узла (необязательно)"
+        },
+        "data_description": {
+          "base_topic": "Префикс, в который lumenctl публикует сообщения. По умолчанию lumenctl.",
+          "node_id": "Оставьте пустым, чтобы видеть все компьютеры. Укажите node id, чтобы ограничиться одним ПК."
+        }
+      }
+    },
+    "error": {
+      "invalid_base_topic": "Топик без пробелов и без подстановочных знаков MQTT.",
+      "invalid_node_id": "Идентификатор узла не может содержать пробелы, слэши и подстановочные знаки MQTT."
+    },
+    "abort": {
+      "already_configured": "lumenctl уже настроен.",
+      "mqtt_missing": "Сначала настройте интеграцию MQTT. lumenctl использует её брокер."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "lumenctl",
+        "data": {
+          "base_topic": "Базовый топик",
+          "node_id": "Идентификатор узла (необязательно)"
+        },
+        "data_description": {
+          "base_topic": "Префикс, в который lumenctl публикует сообщения. По умолчанию lumenctl.",
+          "node_id": "Оставьте пустым, чтобы видеть все компьютеры. Укажите node id, чтобы ограничиться одним ПК."
+        }
+      }
+    },
+    "error": {
+      "invalid_base_topic": "Топик без пробелов и без подстановочных знаков MQTT.",
+      "invalid_node_id": "Идентификатор узла не может содержать пробелы, слэши и подстановочные знаки MQTT."
+    }
+  },
+  "entity": {
+    "number": {
+      "contrast": { "name": "Контраст" },
+      "volume": { "name": "Громкость динамиков" },
+      "red": { "name": "Красный" },
+      "green": { "name": "Зелёный" },
+      "blue": { "name": "Синий" }
+    },
+    "select": {
+      "input": { "name": "Вход" },
+      "color_preset": { "name": "Цветовой пресет" },
+      "display_mode": { "name": "Режим изображения" }
+    },
+    "button": {
+      "rescan": { "name": "Пересканировать мониторы" }
+    },
+    "text": {
+      "command": { "name": "Команда" }
+    },
+    "binary_sensor": {
+      "ddc": { "name": "DDC/CI" }
+    }
+  }
+}

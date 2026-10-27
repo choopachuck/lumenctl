@@ -12,6 +12,7 @@
   onMount(async () => {
     fonts = await api.fonts().catch(() => []);
     const cfg = structuredClone(await api.config());
+    cfg.mqtt.discovery ??= true;
     for (const m of app.monitors) {
       if (!cfg.monitor.some((c) => c.id === m.id)) {
         cfg.monitor.push({
@@ -203,7 +204,9 @@
 
     <h2>MQTT · Home Assistant</h2>
     <div class="card form">
-      <label><input type="checkbox" bind:checked={draft.mqtt.enabled} /> Enable MQTT with Home Assistant discovery</label>
+      <label><input type="checkbox" bind:checked={draft.mqtt.enabled} /> Enable MQTT</label>
+      <label><input type="checkbox" bind:checked={draft.mqtt.discovery} /> Publish Home Assistant MQTT discovery</label>
+      <p class="muted">Turn discovery off when using the lumenctl HACS integration. With discovery left on, Home Assistant creates a second copy of every entity.</p>
       <div class="grid">
         <span>Broker</span>
         <div class="row"><input type="text" class="grow" bind:value={draft.mqtt.host} />

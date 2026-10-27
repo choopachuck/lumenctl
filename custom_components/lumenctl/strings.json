@@ -1,0 +1,68 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "lumenctl",
+        "description": "Uses the MQTT broker already configured in Home Assistant. In lumenctl, enable MQTT and turn off Home Assistant discovery.",
+        "data": {
+          "base_topic": "Base topic",
+          "node_id": "Node id (optional)"
+        },
+        "data_description": {
+          "base_topic": "Topic prefix lumenctl publishes to. The default is lumenctl.",
+          "node_id": "Leave empty to discover every computer. Set a node id to limit this entry to one PC."
+        }
+      }
+    },
+    "error": {
+      "invalid_base_topic": "Enter a topic without spaces or MQTT wildcards.",
+      "invalid_node_id": "Node id cannot contain spaces, slashes, or MQTT wildcards."
+    },
+    "abort": {
+      "already_configured": "lumenctl is already configured.",
+      "mqtt_missing": "Configure the MQTT integration first. lumenctl uses that broker."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "lumenctl",
+        "data": {
+          "base_topic": "Base topic",
+          "node_id": "Node id (optional)"
+        },
+        "data_description": {
+          "base_topic": "Topic prefix lumenctl publishes to. The default is lumenctl.",
+          "node_id": "Leave empty to discover every computer. Set a node id to limit this entry to one PC."
+        }
+      }
+    },
+    "error": {
+      "invalid_base_topic": "Enter a topic without spaces or MQTT wildcards.",
+      "invalid_node_id": "Node id cannot contain spaces, slashes, or MQTT wildcards."
+    }
+  },
+  "entity": {
+    "number": {
+      "contrast": { "name": "Contrast" },
+      "volume": { "name": "Speaker volume" },
+      "red": { "name": "Red" },
+      "green": { "name": "Green" },
+      "blue": { "name": "Blue" }
+    },
+    "select": {
+      "input": { "name": "Input" },
+      "color_preset": { "name": "Color preset" },
+      "display_mode": { "name": "Display mode" }
+    },
+    "button": {
+      "rescan": { "name": "Rescan monitors" }
+    },
+    "text": {
+      "command": { "name": "Command" }
+    },
+    "binary_sensor": {
+      "ddc": { "name": "DDC/CI" }
+    }
+  }
+}

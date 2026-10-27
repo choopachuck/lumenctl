@@ -1,0 +1,25 @@
+{
+  "entity": {
+    "number": {
+      "contrast": { "default": "mdi:contrast-box" },
+      "volume": { "default": "mdi:volume-high" },
+      "red": { "default": "mdi:palette" },
+      "green": { "default": "mdi:palette" },
+      "blue": { "default": "mdi:palette" }
+    },
+    "select": {
+      "input": { "default": "mdi:video-input-hdmi" },
+      "color_preset": { "default": "mdi:palette-swatch" },
+      "display_mode": { "default": "mdi:movie-open" }
+    },
+    "button": {
+      "rescan": { "default": "mdi:monitor-shimmer" }
+    },
+    "text": {
+      "command": { "default": "mdi:console-line" }
+    },
+    "binary_sensor": {
+      "ddc": { "default": "mdi:lan-connect" }
+    }
+  }
+}

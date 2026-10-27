@@ -110,6 +110,7 @@ export interface Config {
     discovery_prefix: string;
     base_topic: string;
     node_id: string | null;
+    discovery: boolean;
   };
   tray: {
     enabled: boolean;

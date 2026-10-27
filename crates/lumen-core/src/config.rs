@@ -76,6 +76,14 @@ pub struct Mqtt {
     pub base_topic: String,
     /// Device identifier in Home Assistant; defaults to the computer name.
     pub node_id: Option<String>,
+    /// Publish Home Assistant MQTT discovery. Turn this off when the lumenctl
+    /// HACS integration is installed, otherwise every entity appears twice.
+    #[serde(default = "default_true")]
+    pub discovery: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for Mqtt {
@@ -89,6 +97,7 @@ impl Default for Mqtt {
             discovery_prefix: "homeassistant".into(),
             base_topic: "lumenctl".into(),
             node_id: None,
+            discovery: true,
         }
     }
 }
@@ -222,6 +231,15 @@ mod tests {
     fn empty_file_gives_defaults() {
         let c: Config = toml::from_str("").unwrap();
         assert!(c.api.enabled);
+        assert!(c.mqtt.discovery);
         assert_eq!(c.tray.wheel_step_brightness, 5);
+    }
+
+    #[test]
+    fn mqtt_without_discovery_field_keeps_discovery_on() {
+        let c: Config = toml::from_str("[mqtt]\nenabled = true\n").unwrap();
+        assert!(c.mqtt.enabled);
+        assert!(c.mqtt.discovery);
+        assert_eq!(c.mqtt.base_topic, "lumenctl");
     }
 }

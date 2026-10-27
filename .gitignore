@@ -3,3 +3,6 @@
 node_modules
 src-tauri/gen
 *.log
+__pycache__/
+.pytest_cache/
+*.pyc

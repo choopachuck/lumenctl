@@ -10,8 +10,9 @@ tray, a modern UI, the command line, HTTP/WebSocket or Home Assistant.
   (fast scrolling sends only the final value) and de-duplicated writes to spare the monitor EEPROM.
 - **ClickMonitorDDC command language** (`MateView b-10 N2724A b+10`, `t b 0 t b 50`, `setVCP 0x10 + 10`, …).
 - **REST + WebSocket API**, optional bearer token.
-- **MQTT with Home Assistant discovery**: every monitor shows up as a device with a light
-  (brightness + power), numbers (contrast, volume, RGB) and selects (input, color preset, mode).
+- **MQTT**: Home Assistant discovery, or the HACS integration in `custom_components/lumenctl`.
+  Every monitor is a device with a light (brightness + power), numbers (contrast, volume, RGB)
+  and selects (input, color preset, mode).
 
 ## Build & run
 
@@ -96,10 +97,30 @@ The WebSocket first sends `{"type":"monitors_changed","monitors":[…]}`, then p
 
 ## Home Assistant
 
-Enable MQTT in Settings (broker of the Mosquitto add-on, discovery prefix `homeassistant`).
-Entities appear automatically: `light.<monitor>` (brightness, on/off = monitor power), `number.*_contrast`,
-`number.*_volume`, `select.*_input`, `select.*_color_preset`, plus a `text` entity that runs any command
-line and a "Rescan monitors" button.
+lumenctl talks to Home Assistant over MQTT. Use one of the two entity sources, not both.
+
+### HACS integration
+
+In HACS, add this repository as an Integration and install lumenctl. Home Assistant needs the MQTT
+integration configured first. Then add the lumenctl integration: the default base topic is `lumenctl`.
+Leave node id empty to pick up every computer, or set the node id shown in lumenctl Settings.
+
+In lumenctl, enable MQTT and turn **Publish Home Assistant MQTT discovery** off. Discovery left on
+creates a second copy of every entity. The topic contract is in
+[docs/hacs-integration.md](docs/hacs-integration.md).
+
+Each monitor becomes a device: a light (power and brightness), sliders for contrast, volume and RGB
+(RGB is hidden until enabled), selects for input, color preset and display mode, and a DDC/CI
+diagnostic. The PC is a device with a command field and a Rescan monitors button.
+
+### MQTT discovery
+
+Leave **Publish Home Assistant MQTT discovery** on (the default) and set the discovery prefix to
+`homeassistant`. Entities appear without the custom integration: `light.<monitor>` (brightness,
+on/off = monitor power), `number.*_contrast`, `number.*_volume`, `select.*_input`,
+`select.*_color_preset`, plus a text entity that runs any command line and a Rescan monitors button.
+
+### REST
 
 Without MQTT you can use the REST API directly:
 
@@ -124,7 +145,7 @@ rest_command:
 | Monitor info (EDID name, serial, year, connection), capability string, VCP explorer | ✅ |
 | Verify writes, save to NVRAM, same values for all monitors, monitor-under-cursor default | ✅ |
 | System volume, rotate display, all-monitors power-save, start with Windows | ✅ |
-| HTTP/WS API, MQTT + Home Assistant discovery | ✅ new |
+| HTTP/WS API, MQTT discovery, HACS integration | ✅ new |
 | Global hotkeys and wheel + modifier combinations | planned |
 | Timed auto-run commands, per-program / fullscreen auto-run with restore | planned |
 | Dim after inactivity, brightness transfer from a source monitor | planned |
@@ -140,6 +161,7 @@ crates/lumen-core    engine, DDC/CI backend (dxva2), command language, config
 crates/lumen-server  axum REST/WS API, MQTT bridge
 src-tauri            desktop app: Win32 tray, Tauri commands, CLI forwarding
 ui                   Svelte 5 frontend
+custom_components/lumenctl   Home Assistant integration installed through HACS
 ```
 
 ## License
