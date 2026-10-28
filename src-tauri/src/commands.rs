@@ -109,6 +109,11 @@ pub fn get_config(engine: State<'_, Engine>) -> Config {
 }
 
 #[tauri::command]
+pub async fn test_mqtt(mqtt: lumen_core::config::Mqtt) -> CmdResult<String> {
+    blocking(move || lumen_server::mqtt::test_connection(&mqtt)).await
+}
+
+#[tauri::command]
 pub fn save_config(app: tauri::AppHandle, engine: State<'_, Engine>, config: Config) -> CmdResult<()> {
     let autostart = config.general.start_with_windows;
     engine.update_config(|c| *c = config).map_err(|e| format!("{e:#}"))?;

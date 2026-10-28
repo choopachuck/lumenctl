@@ -18,7 +18,10 @@ use lumen_core::config::Mqtt as MqttConfig;
 use lumen_core::model::{MonitorSnapshot, NamedValue, PowerState};
 use lumen_core::patch::{MonitorPatch, NameOrValue, ValueSpec};
 use lumen_core::{Engine, Event};
-use rumqttc::{AsyncClient, Event as MqttEvent, LastWill, MqttOptions, Packet, QoS};
+use rumqttc::{
+    AsyncClient, Client, ConnectReturnCode, ConnectionError, Event as MqttEvent, LastWill, MqttOptions, Packet, QoS,
+    RecvTimeoutError,
+};
 use serde_json::{json, Value};
 use tokio::sync::broadcast::error::RecvError;
 use tracing::{info, warn};
@@ -48,7 +51,11 @@ struct Bridge {
 pub async fn run(engine: Engine, cfg: MqttConfig) -> anyhow::Result<()> {
     let node = node_id(&cfg);
     let base = format!("{}/{}", cfg.base_topic.trim_end_matches('/'), node);
-    let mut opts = MqttOptions::new(format!("lumenctl-{node}"), cfg.host.clone(), cfg.port);
+    let broker = broker_endpoint(&cfg.host, cfg.port);
+    let mut opts = MqttOptions::new(format!("lumenctl-{node}"), broker.host.clone(), broker.port);
+    if broker.tls {
+        opts.set_transport(rumqttc::Transport::tls_with_default_config());
+    }
     opts.set_keep_alive(Duration::from_secs(30));
     opts.set_last_will(LastWill::new(format!("{base}/status"), "offline", QoS::AtLeastOnce, true));
     if let Some(user) = cfg.username.clone().filter(|u| !u.is_empty()) {
@@ -70,7 +77,8 @@ pub async fn run(engine: Engine, cfg: MqttConfig) -> anyhow::Result<()> {
         tokio::select! {
             ev = eventloop.poll() => match ev {
                 Ok(MqttEvent::Incoming(Packet::ConnAck(_))) => {
-                    info!("mqtt connected to {}:{}", bridge.cfg.host, bridge.cfg.port);
+                    let broker = broker_endpoint(&bridge.cfg.host, bridge.cfg.port);
+                    info!("mqtt connected to {}:{}", broker.host, broker.port);
                     bridge.on_connect().await;
                 }
                 Ok(MqttEvent::Incoming(Packet::Publish(p))) => {
@@ -414,6 +422,120 @@ fn disappeared_monitor_topics(base: &str, previous: &HashSet<String>, current: &
     topics
 }
 
+struct BrokerEndpoint {
+    host: String,
+    port: u16,
+    tls: bool,
+}
+
+/// Accepts `192.168.2.95`, `host:1883`, `mqtt://host` and `mqtt://host:1883`.
+/// A port written in the address wins over `default_port`. `mqtts://` uses TLS.
+fn broker_endpoint(raw: &str, default_port: u16) -> BrokerEndpoint {
+    let raw = raw.trim();
+    let (rest, tls) = strip_broker_scheme(raw);
+    let rest = rest.trim().trim_end_matches('/');
+    let rest = rest.rsplit_once('@').map(|(_, host)| host).unwrap_or(rest).trim();
+    let (host, port) = split_host_port(rest);
+    BrokerEndpoint { host, port: port.unwrap_or(default_port), tls }
+}
+
+fn strip_broker_scheme(raw: &str) -> (&str, bool) {
+    for (prefix, tls) in [("mqtts://", true), ("ssl://", true), ("mqtt://", false), ("tcp://", false)] {
+        if raw.len() >= prefix.len() && raw[..prefix.len()].eq_ignore_ascii_case(prefix) {
+            return (&raw[prefix.len()..], tls);
+        }
+    }
+    (raw, false)
+}
+
+fn split_host_port(authority: &str) -> (String, Option<u16>) {
+    if let Some(rest) = authority.strip_prefix('[') {
+        if let Some((host, port)) = rest.rsplit_once("]:") {
+            return (host.to_string(), port.parse().ok());
+        }
+        if let Some(host) = rest.strip_suffix(']') {
+            return (host.to_string(), None);
+        }
+    }
+    if let Some((host, port)) = authority.rsplit_once(':') {
+        if !host.is_empty() && !host.contains(':') {
+            if let Ok(port) = port.parse::<u16>() {
+                return (host.to_string(), Some(port));
+            }
+        }
+    }
+    (authority.to_string(), None)
+}
+
+/// Opens a short-lived connection with the given settings and closes it again.
+pub fn test_connection(cfg: &MqttConfig) -> anyhow::Result<String> {
+    let broker = broker_endpoint(&cfg.host, cfg.port);
+    if broker.host.is_empty() {
+        anyhow::bail!("Broker address is empty");
+    }
+    let target = format!("{}:{}", broker.host, broker.port);
+    let mut opts = MqttOptions::new(format!("lumenctl-test-{}", std::process::id()), broker.host.clone(), broker.port);
+    opts.set_keep_alive(Duration::from_secs(10));
+    if broker.tls {
+        opts.set_transport(rumqttc::Transport::tls_with_default_config());
+    }
+    if let Some(user) = cfg.username.clone().filter(|u| !u.is_empty()) {
+        opts.set_credentials(user, cfg.password.clone().unwrap_or_default());
+    }
+    let (client, mut connection) = Client::new(opts, 4);
+    let deadline = std::time::Instant::now() + Duration::from_secs(8);
+    let outcome = loop {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        if left.is_zero() {
+            break Err(anyhow::anyhow!("Timed out connecting to {target}"));
+        }
+        match connection.recv_timeout(left) {
+            Ok(Ok(MqttEvent::Incoming(Packet::ConnAck(ack)))) => {
+                break if ack.code == ConnectReturnCode::Success {
+                    Ok(())
+                } else {
+                    Err(anyhow::anyhow!("{}", refuse_text(ack.code, &target)))
+                };
+            }
+            Ok(Ok(_)) => {}
+            Ok(Err(err)) => break Err(anyhow::anyhow!("{}", explain_connection(err, &target))),
+            Err(RecvTimeoutError::Timeout) => break Err(anyhow::anyhow!("Timed out connecting to {target}")),
+            Err(RecvTimeoutError::Disconnected) => {
+                break Err(anyhow::anyhow!("Connection to {target} closed before the broker answered"));
+            }
+        }
+    };
+    let _ = client.disconnect();
+    let _ = connection.recv_timeout(Duration::from_millis(500));
+    outcome?;
+    if broker.tls {
+        Ok(format!("Connected to {target} (TLS)"))
+    } else {
+        Ok(format!("Connected to {target}"))
+    }
+}
+
+fn refuse_text(code: ConnectReturnCode, target: &str) -> String {
+    let why = match code {
+        ConnectReturnCode::Success => "connected",
+        ConnectReturnCode::BadUserNamePassword | ConnectReturnCode::NotAuthorized => "username or password was rejected",
+        ConnectReturnCode::ServiceUnavailable => "the broker is unavailable",
+        ConnectReturnCode::BadClientId => "the broker rejected the client id",
+        ConnectReturnCode::RefusedProtocolVersion => "the broker refused the MQTT protocol version",
+    };
+    format!("Broker {target} refused the connection: {why}")
+}
+
+fn explain_connection(err: ConnectionError, target: &str) -> String {
+    match err {
+        ConnectionError::ConnectionRefused(code) => refuse_text(code, target),
+        ConnectionError::NetworkTimeout => format!("Timed out connecting to {target}"),
+        ConnectionError::Tls(err) => format!("TLS handshake with {target} failed: {err}"),
+        ConnectionError::Io(err) => format!("Cannot reach {target}: {err}"),
+        other => format!("Cannot connect to {target}: {other}"),
+    }
+}
+
 fn spawn(f: impl FnOnce() -> anyhow::Result<()> + Send + 'static) {
     tokio::task::spawn_blocking(move || {
         if let Err(e) = f() {
@@ -460,6 +582,46 @@ mod tests {
     use super::*;
     use lumen_core::command::Value as V;
     use serde_json::json;
+
+    #[test]
+    fn empty_broker_is_rejected() {
+        let mut cfg = MqttConfig::default();
+        cfg.host = "   ".into();
+        let err = test_connection(&cfg).unwrap_err().to_string();
+        assert!(err.contains("empty"), "{err}");
+    }
+
+    #[test]
+    fn broker_accepts_plain_host_and_mqtt_url() {
+        let plain = broker_endpoint(" 192.168.2.95 ", 1883);
+        assert_eq!(plain.host, "192.168.2.95");
+        assert_eq!(plain.port, 1883);
+        assert!(!plain.tls);
+
+        let url = broker_endpoint("mqtt://192.168.2.95", 1883);
+        assert_eq!(url.host, "192.168.2.95");
+        assert_eq!(url.port, 1883);
+        assert!(!url.tls);
+
+        let with_port = broker_endpoint("MQTT://homeassistant.local:1884/", 1883);
+        assert_eq!(with_port.host, "homeassistant.local");
+        assert_eq!(with_port.port, 1884);
+
+        let explicit = broker_endpoint("192.168.2.95:1883", 1884);
+        assert_eq!((explicit.host.as_str(), explicit.port), ("192.168.2.95", 1883));
+
+        let tls = broker_endpoint("mqtts://broker.local", 1883);
+        assert_eq!(tls.host, "broker.local");
+        assert!(tls.tls);
+
+        let userinfo = broker_endpoint("mqtt://user:secret@192.168.2.95:1883", 1883);
+        assert_eq!(userinfo.host, "192.168.2.95");
+        assert_eq!(userinfo.port, 1883);
+
+        let ipv6 = broker_endpoint("mqtt://[fe80::1]:1883", 1883);
+        assert_eq!(ipv6.host, "fe80::1");
+        assert_eq!(ipv6.port, 1883);
+    }
 
     #[test]
     fn light_payloads() {

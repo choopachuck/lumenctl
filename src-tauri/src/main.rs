@@ -76,6 +76,7 @@ fn main() {
             commands::select_monitor,
             commands::get_config,
             commands::save_config,
+            commands::test_mqtt,
             commands::get_system_volume,
             commands::set_system_volume,
             commands::app_info,

@@ -105,7 +105,7 @@ In HACS, add this repository as an Integration and install lumenctl. Home Assist
 integration configured first. Then add the lumenctl integration: the default base topic is `lumenctl`.
 Leave node id empty to pick up every computer, or set the node id shown in lumenctl Settings.
 
-In lumenctl, enable MQTT and turn **Publish Home Assistant MQTT discovery** off. Discovery left on
+In lumenctl, enable MQTT. The broker can be `192.168.2.95` or `mqtt://192.168.2.95`; a port in that address overrides the port field. Turn **Publish Home Assistant MQTT discovery** off. Discovery left on
 creates a second copy of every entity. The topic contract is in
 [docs/hacs-integration.md](docs/hacs-integration.md).
 

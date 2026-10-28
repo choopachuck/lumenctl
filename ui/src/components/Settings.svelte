@@ -8,6 +8,8 @@
   let info = $state<AppInfo | null>(null);
   let fonts = $state<string[]>([]);
   let saving = $state(false);
+  let testing = $state(false);
+  let mqttTest = $state<{ ok: boolean; text: string } | null>(null);
 
   onMount(async () => {
     fonts = await api.fonts().catch(() => []);
@@ -43,6 +45,26 @@
   function generateToken() {
     const bytes = crypto.getRandomValues(new Uint8Array(18));
     draft!.api.token = btoa(String.fromCharCode(...bytes)).replace(/[+/=]/g, "");
+  }
+
+  function errorText(e: unknown) {
+    if (typeof e === "string") return e;
+    if (e instanceof Error) return e.message;
+    return String(e);
+  }
+
+  async function testMqtt() {
+    if (!draft) return;
+    testing = true;
+    mqttTest = null;
+    try {
+      const text = await api.testMqtt($state.snapshot(draft.mqtt));
+      mqttTest = { ok: true, text };
+    } catch (e) {
+      mqttTest = { ok: false, text: errorText(e) };
+    } finally {
+      testing = false;
+    }
   }
 
   async function save() {
@@ -209,7 +231,7 @@
       <p class="muted">Turn discovery off when using the lumenctl HACS integration. With discovery left on, Home Assistant creates a second copy of every entity.</p>
       <div class="grid">
         <span>Broker</span>
-        <div class="row"><input type="text" class="grow" bind:value={draft.mqtt.host} />
+        <div class="row"><input type="text" class="grow" placeholder="192.168.2.95 or mqtt://192.168.2.95" bind:value={draft.mqtt.host} />
           <input type="number" class="port" bind:value={draft.mqtt.port} /></div>
         <span>Username</span><input type="text" value={draft.mqtt.username ?? ""} oninput={(e) => (draft!.mqtt.username = e.currentTarget.value || null)} />
         <span>Password</span><input type="password" value={draft.mqtt.password ?? ""} oninput={(e) => (draft!.mqtt.password = e.currentTarget.value || null)} />
@@ -217,6 +239,10 @@
         <span>Base topic</span><input type="text" bind:value={draft.mqtt.base_topic} />
         <span>Node id</span><input type="text" placeholder={info?.mqtt_node_id} value={draft.mqtt.node_id ?? ""}
           oninput={(e) => (draft!.mqtt.node_id = e.currentTarget.value || null)} />
+      </div>
+      <div class="row mqtt-test">
+        <button disabled={testing} onclick={testMqtt}>{testing ? "Testing…" : "Test connection"}</button>
+        {#if mqttTest}<span class:ok={mqttTest.ok} class:bad={!mqttTest.ok}>{mqttTest.text}</span>{/if}
       </div>
     </div>
 
@@ -352,6 +378,19 @@
   }
   p {
     margin: 0;
+  }
+  .mqtt-test {
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }
+  .mqtt-test span {
+    font-size: 12px;
+    user-select: text;
+  }
+  .mqtt-test .ok { color: #0b7a32; }
+  .mqtt-test .bad { color: var(--danger); }
+  @media (prefers-color-scheme: dark) {
+    .mqtt-test .ok { color: #3ddc84; }
   }
   .foot {
     font-size: 11px;

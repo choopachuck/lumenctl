@@ -159,6 +159,7 @@ export const api = {
   select: (id: string | null) => invoke<void>("select_monitor", { id }),
   config: () => invoke<Config>("get_config"),
   saveConfig: (config: Config) => invoke<void>("save_config", { config }),
+  testMqtt: (mqtt: Config["mqtt"]) => invoke<string>("test_mqtt", { mqtt }),
   systemVolume: () => invoke<{ volume: number; muted: boolean }>("get_system_volume"),
   setSystemVolume: (volume?: ValueSpec, muted?: boolean) => invoke<void>("set_system_volume", { volume, muted }),
   info: () => invoke<AppInfo>("app_info"),
