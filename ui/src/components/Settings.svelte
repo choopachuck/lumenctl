@@ -88,6 +88,8 @@
     <h2>General</h2>
     <div class="card form">
       <label><input type="checkbox" bind:checked={draft.general.start_with_windows} /> Start with Windows</label>
+      <label><input type="checkbox" bind:checked={draft.general.restore_values} />
+        Restore brightness and contrast on startup and after the computer wakes</label>
       <label><input type="checkbox" bind:checked={draft.general.target_monitor_under_cursor} />
         Commands without a monitor name target the monitor under the cursor</label>
       <label><input type="checkbox" bind:checked={draft.general.same_values_for_all} />

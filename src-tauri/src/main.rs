@@ -21,7 +21,10 @@ fn main() {
 
     let config_path = Config::default_path();
     let config = Config::load(&config_path).unwrap_or_else(|e| {
-        eprintln!("cannot read {}: {e:#}; using defaults", config_path.display());
+        eprintln!(
+            "cannot read {}: {e:#}; using defaults",
+            config_path.display()
+        );
         Config::default()
     });
 
@@ -45,6 +48,7 @@ fn main() {
             if let Err(e) = engine.rescan() {
                 tracing::error!("rescan: {e:#}");
             }
+            engine.restore_saved();
             if let Some(line) = command {
                 run_command(&engine, &line);
             }
@@ -52,16 +56,19 @@ fn main() {
     }
 
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            match cli::command_from_args(&argv[1.min(argv.len())..]) {
+        .plugin(tauri_plugin_single_instance::init(
+            |app, argv, _cwd| match cli::command_from_args(&argv[1.min(argv.len())..]) {
                 Some(line) => {
                     let engine = app.state::<Engine>().inner().clone();
                     std::thread::spawn(move || run_command(&engine, &line));
                 }
                 None => show_window(app),
-            }
-        }))
-        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
+            },
+        ))
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec!["--hidden"]),
+        ))
         .manage(engine.clone())
         .invoke_handler(tauri::generate_handler![
             commands::get_monitors,
@@ -94,7 +101,9 @@ fn main() {
                             let _ = handle.emit("lumen-event", &ev);
                         }
                         Err(RecvError::Lagged(_)) => {
-                            let ev = Event::MonitorsChanged { monitors: handle.state::<Engine>().monitors() };
+                            let ev = Event::MonitorsChanged {
+                                monitors: handle.state::<Engine>().monitors(),
+                            };
                             let _ = handle.emit("lumen-event", &ev);
                         }
                         Err(RecvError::Closed) => break,
@@ -137,7 +146,9 @@ fn main() {
         .expect("error while building lumenctl");
 
     app.run(|_app, event| match event {
-        RunEvent::ExitRequested { api, code: None, .. } => api.prevent_exit(),
+        RunEvent::ExitRequested {
+            api, code: None, ..
+        } => api.prevent_exit(),
         RunEvent::Exit => {
             #[cfg(windows)]
             tray::shutdown();
@@ -169,7 +180,9 @@ fn toggle_window(app: &AppHandle) {
 
 /// Shows the window as a flyout above the notification area of the monitor under the cursor.
 fn show_window(app: &AppHandle) {
-    let Some(w) = app.get_webview_window("main") else { return };
+    let Some(w) = app.get_webview_window("main") else {
+        return;
+    };
     if let (Ok(cursor), Ok(size)) = (app.cursor_position(), w.outer_size()) {
         if let Ok(Some(mon)) = app.monitor_from_point(cursor.x, cursor.y) {
             let area = mon.work_area();
@@ -190,9 +203,11 @@ fn init_logging(config_path: &std::path::Path) {
     let log_path = config_path.with_file_name("lumenctl.log");
     let _ = std::fs::create_dir_all(log_path.parent().unwrap_or(std::path::Path::new(".")));
     match std::fs::File::create(&log_path) {
-        Ok(file) if !cfg!(debug_assertions) => {
-            tracing_subscriber::fmt().with_env_filter(filter).with_ansi(false).with_writer(Mutex::new(file)).init()
-        }
+        Ok(file) if !cfg!(debug_assertions) => tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_ansi(false)
+            .with_writer(Mutex::new(file))
+            .init(),
         _ => tracing_subscriber::fmt().with_env_filter(filter).init(),
     }
 }

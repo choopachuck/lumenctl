@@ -9,6 +9,7 @@ pub mod engine;
 pub mod model;
 pub mod patch;
 pub mod platform;
+mod state;
 pub mod vcp;
 
 pub use config::Config;

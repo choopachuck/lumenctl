@@ -18,8 +18,11 @@ use lumen_core::model::PowerState;
 use lumen_core::vcp::Feature;
 use lumen_core::{platform, Engine, Event};
 use windows::core::{w, PCWSTR};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::Power::{
+    RegisterSuspendResumeNotification, UnregisterSuspendResumeNotification, HPOWERNOTIFY,
+};
 use windows::Win32::UI::Shell::{
     Shell_NotifyIconGetRect, Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_SHOWTIP, NIF_TIP,
     NIM_ADD, NIM_DELETE, NIM_MODIFY, NIM_SETVERSION, NOTIFYICONDATAW, NOTIFYICONIDENTIFIER,
@@ -29,11 +32,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CallNextHookEx, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon,
     DestroyMenu, DispatchMessageW, GetCursorPos, GetMessageW, KillTimer, PostMessageW,
     PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SendMessageTimeoutW,
-    SetForegroundWindow, SetTimer, SetWindowsHookExW, TrackPopupMenuEx, TranslateMessage, HICON,
-    HMENU, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG, MSLLHOOKSTRUCT, SMTO_ABORTIFHUNG,
-    TPM_BOTTOMALIGN, TPM_RETURNCMD, TPM_RIGHTBUTTON, WH_MOUSE_LL, WINDOW_EX_STYLE, WM_APP,
-    WM_CONTEXTMENU, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE,
-    WM_MOUSEWHEEL, WM_TIMER, WNDCLASSEXW, WS_OVERLAPPED,
+    SetForegroundWindow, SetTimer, SetWindowsHookExW, TrackPopupMenuEx, TranslateMessage,
+    DEVICE_NOTIFY_WINDOW_HANDLE, HICON, HMENU, MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MSG,
+    MSLLHOOKSTRUCT, PBT_APMRESUMEAUTOMATIC, SMTO_ABORTIFHUNG, TPM_BOTTOMALIGN, TPM_RETURNCMD,
+    TPM_RIGHTBUTTON, WH_MOUSE_LL, WINDOW_EX_STYLE, WM_APP, WM_CONTEXTMENU, WM_DISPLAYCHANGE,
+    WM_DPICHANGED, WM_LBUTTONUP, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_POWERBROADCAST,
+    WM_TIMER, WNDCLASSEXW, WS_OVERLAPPED,
 };
 
 pub struct Hooks {
@@ -47,6 +51,7 @@ const WM_WHEEL: u32 = WM_APP + 3;
 const WM_SHUTDOWN: u32 = WM_APP + 4;
 const TIMER_RESCAN: usize = 1;
 const TIMER_VOLUME: usize = 2;
+const TIMER_WAKE: usize = 3;
 /// Monitor uIDs never have both low bits set (see `stable_uid`), so this cannot collide.
 const VOLUME_UID: u32 = 0xFFFF;
 
@@ -88,6 +93,7 @@ struct State {
     middle_toggle: HashMap<u32, bool>,
     taskbar_created: u32,
     menu_actions: HashMap<usize, MenuAction>,
+    resume_notify: Option<HPOWERNOTIFY>,
 }
 
 enum MenuAction {
@@ -138,6 +144,14 @@ fn run(engine: Engine, hooks: Hooks) -> anyhow::Result<()> {
             None,
         )?;
         HWND_RAW.store(hwnd.0 as isize, Ordering::SeqCst);
+        let resume_notify =
+            match RegisterSuspendResumeNotification(HANDLE(hwnd.0), DEVICE_NOTIFY_WINDOW_HANDLE) {
+                Ok(handle) => Some(handle),
+                Err(e) => {
+                    tracing::warn!("suspend/resume notifications: {e}");
+                    None
+                }
+            };
 
         let taskbar_created = RegisterWindowMessageW(w!("TaskbarCreated"));
         STATE.with(|s| {
@@ -149,6 +163,7 @@ fn run(engine: Engine, hooks: Hooks) -> anyhow::Result<()> {
                 middle_toggle: HashMap::new(),
                 taskbar_created,
                 menu_actions: HashMap::new(),
+                resume_notify,
             })
         });
 
@@ -266,6 +281,22 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 });
                 true
             }
+            WM_TIMER if wparam.0 == TIMER_WAKE => {
+                let _ = KillTimer(Some(hwnd), TIMER_WAKE);
+                let engine = state.engine.clone();
+                thread::spawn(move || {
+                    if let Err(e) = engine.rescan() {
+                        tracing::warn!("wake rescan: {e:#}");
+                    }
+                    engine.restore_saved();
+                });
+                true
+            }
+            WM_POWERBROADCAST if wparam.0 as u32 == PBT_APMRESUMEAUTOMATIC => {
+                // DDC/CI is not ready in the same instant the machine resumes.
+                SetTimer(Some(hwnd), TIMER_WAKE, 3000, None);
+                true
+            }
             WM_TIMER if wparam.0 == TIMER_VOLUME => {
                 if state.engine.config().tray.show_system_volume_icon {
                     state.sync_icons();
@@ -282,6 +313,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 false
             }
             WM_SHUTDOWN => {
+                if let Some(handle) = state.resume_notify.take() {
+                    let _ = UnregisterSuspendResumeNotification(handle);
+                }
                 state.remove_all();
                 PostQuitMessage(0);
                 true
@@ -297,6 +331,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             _ => false,
         }
     });
+    if msg == WM_POWERBROADCAST {
+        // The system expects TRUE when this message is processed.
+        return LRESULT(1);
+    }
     if handled {
         LRESULT(0)
     } else {

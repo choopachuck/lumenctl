@@ -25,6 +25,7 @@ npm run build    # release build + NSIS/MSI installers in target/release/bundle
 ```
 
 Configuration lives in `%APPDATA%\lumenctl\config.toml` (editable from the Settings screen).
+Last brightness and contrast are kept beside it in `state.toml`.
 
 ## Download
 
@@ -149,7 +150,7 @@ rest_command:
 | Global hotkeys and wheel + modifier combinations | planned |
 | Timed auto-run commands, per-program / fullscreen auto-run with restore | planned |
 | Dim after inactivity, brightness transfer from a source monitor | planned |
-| Restore last values on start / after wake-up | planned |
+| Restore last brightness and contrast on start / after wake-up | ✅ |
 | NVIDIA Digital Vibrance / AMD saturation (`k`) | planned |
 | Laptop panel brightness (WMI) | planned |
 | On-screen notifications for hotkeys, import of `ClickMonitorDDC.xml` | planned |
